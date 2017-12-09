@@ -12,12 +12,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#define M_PI 3.14159265358979323846
 #include <time.h>
 #include <string.h>
 
 #define _in_
 #define _out_
 #define _inout_
+
 
 int assert_vec(double *v, double *vt, int n)
 {
@@ -116,8 +118,8 @@ int seq_dft(
                 double sumimag = 0;
 
                 for (n = 0; n < xn; n++) {
-                        sumreal += x[n] * cos(n * k * 2 * acos(-1) / xn);
-                        sumimag -= x[n] * sin(n * k * 2 * acos(-1) / xn);
+                        sumreal += x[n] * cos(n * k * 2 * M_PI / xn);
+                        sumimag -= x[n] * sin(n * k * 2 * M_PI / xn);
                 }
 
                 (*fx)[k] = abs(sumreal*sumreal) + abs(sumimag*sumimag);
@@ -128,12 +130,19 @@ int seq_dft(
 
 __global__ void kernel_dft(int xn, double *a, double *q)
 {
+        int n;
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx > xn) return; // Stop threads in block outside of xn
 
-        if (idx > xn) return;
+        double sum_real = 0;
+        double sum_imag = 0;
+        for (n = 0; n < xn; n++) {
+                sum_real += a[n] * cos(n * idx * 2 * M_PI / xn);
+                sum_imag -= a[n] * sin(n * idx * 2 * M_PI / xn);
+        }
 
-        printf("%d\r\n", idx);
-        q[idx] = a[idx];
+        // Write result to output vector
+        q[idx] = abs(sum_real*sum_real) + abs(sum_imag * sum_imag);
 }
 
 cudaError_t cu_dft(
@@ -203,17 +212,18 @@ int main()
         }
 
         seq_dft(vt, samples, &sf);
-        print_vec(out_dft, sf, samples);
+        //print_vec(out_dft, sf, samples);
 
         cu_dft(vt, samples, &vf);
+        print_vec(out_dft, sf, samples);
 
         printf("assert_vec: %s\r\n", 
-                assert_vec(vt, vf, samples)? "SUCCESS" : "FAIL");
-/*
+                assert_vec(sf, vf, samples)? "SUCCESS" : "FAIL");
+
         for (i = 0; i < samples; i++) {
-                printf("%d\t%f\t%f\t%s\r\n", i, vt[i], vf[i],
-                        vt[i] == vf[i] ? "" : "!!!");
-        }*/
+                printf("%d\t%f\t%f\t%s\r\n", i, sf[i], vf[i],
+                        sf[i] == vf[i] ? "" : "!!!");
+        }
 
 exit:
         free(vt);
