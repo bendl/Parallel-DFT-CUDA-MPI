@@ -69,3 +69,15 @@ int read_into_v(char *path, double **v, int *vn)
                 }
         }
 }
+
+void print_vec(FILE *f, double *v, int n)
+{
+        int i;
+        FILE *f_out;
+
+        if (f) f_out = f;
+        else f_out = stdout;
+        for (i = 0; i < n; i++) {
+                fprintf(f_out, "%d,%.2lf\n", i, v[i]);
+        }
+}

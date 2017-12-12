@@ -21,7 +21,6 @@
 #define _out_
 #define _inout_
 
-
 int assert_vec(double *v, double *vt, int n)
 {
         while (n--) {
@@ -29,18 +28,6 @@ int assert_vec(double *v, double *vt, int n)
         }
 
         return 1;
-}
-
-void print_vec(FILE *f, double *v, int n)
-{
-        int i;
-        FILE *f_out;
-
-        if (f) f_out = f;
-        else f_out = stdout;
-        for (i = 0; i < n; i++) {
-                fprintf(f_out, "%d,%.2lf\n", i, v[i]);
-        }
 }
 
 // Sequential implementation of the DFT algorithm
