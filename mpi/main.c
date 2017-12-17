@@ -12,6 +12,7 @@
 #include <math.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 
 #include <mpi.h>
 
@@ -66,6 +67,7 @@ int seq_dft(
 // Sequential implementation of the DFT algorithm
 int mpi_dft(
         _in_ double *vt,        // vector time domain
+        _in_ int n_start,       // f(n_start) location
         _in_ int N,             // vector time domain count
         _out_ double **fx       // vector frequency domain out
 ) {
@@ -78,13 +80,19 @@ int mpi_dft(
         for (k = 0; k < nsamples_per_node; k++) {
                 double sumreal = 0;
                 double sumimag = 0;
+                double sum_out = 0;
                 int sample_start;
 
+                // Out of bounds check
+                if ((k + nsamples_start) > nsamples) break;
+
                 for (n = 0; n < N; n++) {
-                        sumreal += vt[n] * cos(n * k * 2 * M_PI / N);
-                        sumimag -= vt[n] * sin(n * k * 2 * M_PI / N);
+                        sumreal += vt[n] * cos(n * (k + nsamples_start) * 2 * M_PI / N);
+                        sumimag -= vt[n] * sin(n * (k + nsamples_start) * 2 * M_PI / N);
                 }
 
+                sum_out = fabs(sumreal*sumreal) + fabs(sumimag*sumimag);
+                //printf("#%d writing %d: %f\r\n", world_rank, k, sum_out);
                 (*fx)[k] = fabs(sumreal*sumreal) + fabs(sumimag*sumimag);
         }
 
@@ -98,8 +106,8 @@ int main(int argc, char **argv)
         // Hyper parameters
         double  *sf, // sequentual dft f(x)
                 *vt, // value 
-                *vf; // cuda dft f(x)
-        int     nsamples;
+                *vf, // cuda dft f(x) (SUB SAMPLE)
+                *vf_all = NULL;
         int     i;
 
         MPI_Init(argc, argv);
@@ -110,6 +118,7 @@ int main(int argc, char **argv)
                 read_into_v("../data/square.csv", &vt, &nsamples);
                 read_into_v("../data/square.csv", &sf, &nsamples);
 
+                // Create output file
                 out_dft = fopen("../test/dft.txt", "w");
                 if (!out_dft) {
                         ret = 1;
@@ -119,6 +128,7 @@ int main(int argc, char **argv)
 
         // Broadcast the nsamples to each node
         MPI_Bcast(&nsamples, 1, MPI_INT, ROOT_RANK, MPI_COMM_WORLD);
+        printf("#%d nsamples: %d\r\n", world_rank, nsamples);
 
         // Allocate memory for the incoming sample buffer
         NOT_ROOT {
@@ -134,19 +144,35 @@ int main(int argc, char **argv)
         nsamples_per_node = (nsamples + world_size - 1) / world_size;
         nsamples_start = world_rank * nsamples_per_node;
 
-        mpi_dft(vt, nsamples, &vf);
         ROOT_ONLY {
-                for (int i = 0; i < nsamples_per_node; i++) {
-                        printf("%d\t%f\r\n", vf[i]);
-                }
+                // Combined output of all nodes
+                // Note: Size is not nsamples, as the last block may not
+                // have same number of samples as the others
+                vf_all = calloc(world_size * nsamples_per_node, sizeof(double));
+        }
+
+        // Perform the parallel dft function
+        mpi_dft(vt, nsamples_start, nsamples, &vf);
+
+        // Now ROOT_RANK must gather all sub arrays into a single array
+        MPI_Gather(
+                vf,     nsamples_per_node, MPI_DOUBLE, // send
+                vf_all, nsamples_per_node, MPI_DOUBLE, // recv
+                ROOT_RANK, MPI_COMM_WORLD);
+
+        ROOT_ONLY {
+                // Write output function
+                print_vec(out_dft, vf_all, nsamples);
         }
 
 exit:
         MPI_Finalize();
         SAFE_FREE(vt);
+        SAFE_FREE(vf);
 
         ROOT_ONLY {
                 SAFE_FREE(sf);
+                SAFE_FREE(vf_all);
         }
 
         return ret;
