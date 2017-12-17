@@ -63,6 +63,34 @@ int seq_dft(
         return 0;
 }
 
+// Sequential implementation of the DFT algorithm
+int mpi_dft(
+        _in_ double *vt,        // vector time domain
+        _in_ int N,             // vector time domain count
+        _out_ double **fx       // vector frequency domain out
+) {
+        int k, n;
+
+        // Allocate memory for output vector function
+        *fx = (double*)calloc(nsamples_per_node, sizeof(double));
+
+        // Perform the dft starting from this sample
+        for (k = 0; k < nsamples_per_node; k++) {
+                double sumreal = 0;
+                double sumimag = 0;
+                int sample_start;
+
+                for (n = 0; n < N; n++) {
+                        sumreal += vt[n] * cos(n * k * 2 * M_PI / N);
+                        sumimag -= vt[n] * sin(n * k * 2 * M_PI / N);
+                }
+
+                (*fx)[k] = fabs(sumreal*sumreal) + fabs(sumimag*sumimag);
+        }
+
+        return 0;
+}
+
 int main(int argc, char **argv)
 {
         int ret = 0;
@@ -93,10 +121,10 @@ int main(int argc, char **argv)
         MPI_Bcast(&nsamples, 1, MPI_INT, ROOT_RANK, MPI_COMM_WORLD);
 
         // Allocate memory for the incoming sample buffer
-        NOT_ROOT { 
-                vt = malloc(nsamples * sizeof(double)); 
+        NOT_ROOT {
+                vt = malloc(nsamples * sizeof(double));
         }
-
+        
         // Broadcast the samples array to each node.
         // Each node will need the full samples array as it needs to sum
         // each value individually
@@ -106,12 +134,11 @@ int main(int argc, char **argv)
         nsamples_per_node = (nsamples + world_size - 1) / world_size;
         nsamples_start = world_rank * nsamples_per_node;
 
-        printf("%d/%d nsamples: %d Per node: %d Starting: %d\r\n", world_rank, world_size, nsamples, nsamples_per_node, nsamples_start);
-        printf("Rank %d: First samples: %f %f %f %f\r\n", world_rank, vt[0], vt[1], vt[2], vt[3]);
-
+        mpi_dft(vt, nsamples, &vf);
         ROOT_ONLY {
-                seq_dft(vt, nsamples, &vf);
-                print_vec(out_dft, vf, nsamples);
+                for (int i = 0; i < nsamples_per_node; i++) {
+                        printf("%d\t%f\r\n", vf[i]);
+                }
         }
 
 exit:
