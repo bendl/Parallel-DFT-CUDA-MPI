@@ -73,8 +73,13 @@ int mpi_dft(
 ) {
         int k, n;
 
+        if (n_start > nsamples) return 1;
+        printf("#%d nstart: %d\r\n", world_rank, n_start);
+
         // Allocate memory for output vector function
         *fx = (double*)calloc(nsamples_per_node, sizeof(double));
+
+
 
         // Perform the dft starting from this sample
         for (k = 0; k < nsamples_per_node; k++) {
@@ -128,7 +133,6 @@ int main(int argc, char **argv)
 
         // Broadcast the nsamples to each node
         MPI_Bcast(&nsamples, 1, MPI_INT, ROOT_RANK, MPI_COMM_WORLD);
-        printf("#%d nsamples: %d\r\n", world_rank, nsamples);
 
         // Allocate memory for the incoming sample buffer
         NOT_ROOT {
@@ -144,7 +148,14 @@ int main(int argc, char **argv)
         nsamples_per_node = (nsamples + world_size - 1) / world_size;
         nsamples_start = world_rank * nsamples_per_node;
 
+        if (nsamples_start > nsamples) {
+                // More nodes than datapoints
+                ret = 1;
+                goto exit;
+        }
+
         ROOT_ONLY {
+                printf("Samples Per Node: %d\r\n", nsamples_per_node);
                 // Combined output of all nodes
                 // Note: Size is not nsamples, as the last block may not
                 // have same number of samples as the others
@@ -173,6 +184,7 @@ exit:
         ROOT_ONLY {
                 SAFE_FREE(sf);
                 SAFE_FREE(vf_all);
+                fclose(out_dft);
         }
 
         return ret;
