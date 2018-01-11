@@ -22,7 +22,7 @@
     <ProjectGuid>{672EC9AD-2894-444D-B16D-D35F749FE30E}</ProjectGuid>
     <RootNamespace>mpi</RootNamespace>
     <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
-    <ProjectName>soft453_mpi</ProjectName>
+    <ProjectName>soft354_mpi</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

@@ -79,8 +79,6 @@ int mpi_dft(
         // Allocate memory for output vector function
         *fx = (double*)calloc(nsamples_per_node, sizeof(double));
 
-
-
         // Perform the dft starting from this sample
         for (k = 0; k < nsamples_per_node; k++) {
                 double sumreal = 0;
@@ -89,7 +87,7 @@ int mpi_dft(
                 int sample_start;
 
                 // Out of bounds check
-                if ((k + nsamples_start) > nsamples) break;
+                if ((k + nsamples_start) > nsamples/2) break;
 
                 for (n = 0; n < N; n++) {
                         sumreal += vt[n] * cos(n * (k + nsamples_start) * 2 * M_PI / N);
@@ -120,8 +118,8 @@ int main(int argc, char **argv)
         MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
         ROOT_ONLY {
-                read_into_v("../data/square.csv", &vt, &nsamples);
-                read_into_v("../data/square.csv", &sf, &nsamples);
+                read_into_v("../data/sine.csv", &vt, &nsamples);
+                read_into_v("../data/sine.csv", &sf, &nsamples);
 
                 // Create output file
                 out_dft = fopen("../test/dft.txt", "w");
