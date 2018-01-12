@@ -13,6 +13,7 @@
 #include <time.h>
 #include <string.h>
 #include <assert.h>
+#include <windows.h>
 
 #include <mpi.h>
 
@@ -37,6 +38,21 @@ FILE    *out_dft; // Output file
 #define IS_ROOT         (world_rank == ROOT_RANK)
 #define ROOT_ONLY       if (IS_ROOT)
 #define NOT_ROOT        if (!IS_ROOT)
+
+
+double  timer_freq = 0;
+__int64 time_bcast_samples_start;
+double  time_bcast_samples;
+
+#define TIME_START(d) \
+        timer_start(d, &timer_freq);
+
+#define TIME_STOP(d, out) \
+        out = timer_stop(d, &timer_freq); \
+        ROOT_ONLY { \
+                printf(#d "\t%f ms\r\n", out); \
+        }
+        
 
 // Sequential implementation of the DFT algorithm
 int seq_dft(
@@ -130,7 +146,9 @@ int main(int argc, char **argv)
         }
 
         // Broadcast the nsamples to each node
+        TIME_START(&time_bcast_samples_start);
         MPI_Bcast(&nsamples, 1, MPI_INT, ROOT_RANK, MPI_COMM_WORLD);
+        TIME_STOP(&time_bcast_samples_start, time_bcast_samples);
 
         // Allocate memory for the incoming sample buffer
         NOT_ROOT {
