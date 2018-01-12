@@ -15,7 +15,7 @@
 int read_get_lines(char *path);
 int read_into_v(char *path, double **v, int *vn);
 
-void print_vec(FILE *f, double *v, int n);
+void fprint_vec(FILE *f, double *v, int n);
 
 
 void timer_start(__int64 * start, double *freq);

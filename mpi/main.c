@@ -32,6 +32,8 @@ int     nsamples;
 int     nsamples_per_node;
 int     nsamples_start;
 
+char    *input_file_path = "../data/sine.large.csv";
+
 FILE    *out_dft; // Output file
 
 #define ROOT_RANK       (0)
@@ -41,17 +43,31 @@ FILE    *out_dft; // Output file
 
 
 double  timer_freq = 0;
+__int64 time_total_start;
+double  time_total;
+
 __int64 time_bcast_samples_start;
 double  time_bcast_samples;
+
+__int64 time_dft_start;
+double  time_dft;
+
+__int64 time_gather_start;
+double  time_gather;
 
 #define TIME_START(d) \
         timer_start(d, &timer_freq);
 
+#define __TIME_STOP(d, out) \
+        out = timer_stop(d, &timer_freq);
+
 #define TIME_STOP(d, out) \
-        out = timer_stop(d, &timer_freq); \
-        ROOT_ONLY { \
-                printf(#d "\t%f ms\r\n", out); \
-        }
+        __TIME_STOP(d, out) \
+        printf("%d\t" #out "\t%f ms\r\n", world_rank, out);
+
+#define TIME_STOP_R(d, out) \
+        __TIME_STOP(d, out) \
+        ROOT_ONLY { printf("%d\t" #out "\t%f ms\r\n", world_rank, out); }
         
 
 // Sequential implementation of the DFT algorithm
@@ -124,8 +140,8 @@ int main(int argc, char **argv)
 
         // Hyper parameters
         double  *sf, // sequentual dft f(x)
-                *vt, // value 
-                *vf, // cuda dft f(x) (SUB SAMPLE)
+                *vt, // value in time domain
+                *vf, // value in frequency domain
                 *vf_all = NULL;
         int     i;
 
@@ -134,8 +150,8 @@ int main(int argc, char **argv)
         MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
         ROOT_ONLY {
-                read_into_v("../data/sine.csv", &vt, &nsamples);
-                read_into_v("../data/sine.csv", &sf, &nsamples);
+                read_into_v(input_file_path, &vt, &nsamples);
+                read_into_v(input_file_path, &sf, &nsamples);
 
                 // Create output file
                 out_dft = fopen("../test/dft.txt", "w");
@@ -144,6 +160,9 @@ int main(int argc, char **argv)
                         goto exit;
                 }
         }
+
+        // Total program run time timer
+        TIME_START(&time_total_start);
 
         // Broadcast the nsamples to each node
         TIME_START(&time_bcast_samples_start);
@@ -179,17 +198,23 @@ int main(int argc, char **argv)
         }
 
         // Perform the parallel dft function
+        TIME_START(&time_dft_start);
         mpi_dft(vt, nsamples_start, nsamples, &vf);
+        TIME_STOP_R(&time_dft_start, time_dft);
 
         // Now ROOT_RANK must gather all sub arrays into a single array
+        TIME_START(&time_gather_start);
         MPI_Gather(
                 vf,     nsamples_per_node, MPI_DOUBLE, // send
                 vf_all, nsamples_per_node, MPI_DOUBLE, // recv
                 ROOT_RANK, MPI_COMM_WORLD);
+        TIME_STOP_R(&time_gather_start, time_gather);
+
+        TIME_STOP_R(&time_total_start, time_total);
 
         ROOT_ONLY {
                 // Write output function
-                print_vec(out_dft, vf_all, nsamples);
+                fprint_vec(out_dft, vf_all, nsamples);
         }
 
 exit:

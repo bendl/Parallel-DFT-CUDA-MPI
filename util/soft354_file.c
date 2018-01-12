@@ -71,7 +71,7 @@ int read_into_v(char *path, double **v, int *vn)
         }
 }
 
-void print_vec(FILE *f, double *v, int n)
+void fprint_vec(FILE *f, double *v, int n)
 {
         int i;
         FILE *f_out;
