@@ -106,8 +106,10 @@ int main(int argc, char **argv)
         nsamples_per_node = (nsamples + world_size - 1) / world_size;
         nsamples_start = world_rank * nsamples_per_node;
 
-        printf("%d/%d nsamples: %d Per node: %d Starting: %d\r\n", world_rank, world_size, nsamples, nsamples_per_node, nsamples_start);
-        printf("Rank %d: First samples: %f %f %f %f\r\n", world_rank, vt[0], vt[1], vt[2], vt[3]);
+        printf("%d/%d nsamples: %d Per node: %d Starting: %d\r\n", 
+                world_rank, world_size, nsamples, nsamples_per_node, nsamples_start);
+        printf("Rank %d: First samples: %f %f %f %f\r\n", 
+                world_rank, vt[0], vt[1], vt[2], vt[3]);
 
         ROOT_ONLY {
                 seq_dft(vt, nsamples, &vf);
