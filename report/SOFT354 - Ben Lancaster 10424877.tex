@@ -22,6 +22,10 @@
 % https://tex.stackexchange.com/questions/86120/font-size-of-figure-caption-header
 \usepackage[font=scriptsize,labelfont=bf]{caption}
 
+\setlength{\belowcaptionskip}{-10pt}
+\setlength{\abovecaptionskip}{-5pt} % Chosen fairly arbitrarily
+
+
 \usepackage{fancyhdr}
 \pagestyle{fancy}
 \lhead{\rightmark}
@@ -87,6 +91,10 @@ In this report, I will be implementing the DFT to convert signals in the time do
 \subsubsection{Dynamic Shared Memory}
 As each operation on each sample requires values from all other samples, global memory accesses will be largest performance bottleneck. To reduce the amount of global memory accesses, I had the first thread of each block copy the complete global memory copy of the samples to a local shared memory buffer, which the DFT kernel would access instead of the global memory. 
 
+On Compute Capability 2.0 devices, the maximum shared memory size per block is 48KB, meaning that if the kernel was launched with 1 block, it could access all 48KB of memory. If two blocks were used, each block would have 24KB of memory. 
+
+To be able to fit the entire sample set in shared memory, I had to keep the maximum shared memory per block at it's highest by using as few blocks as possible. I used the maximum of 1024 threads per block to reduce the number of required blocks.  
+
 \begin{wrapfigure}{r}{0.4\textwidth}
 \begin{center}
 \includegraphics[scale=0.6]{shared_vs_global_graph}
@@ -94,9 +102,6 @@ As each operation on each sample requires values from all other samples, global 
 \caption{Average kernel execution time using shared vs. global memory.}
 \label{fig:shared_vs_global_graph}
 \end{wrapfigure}
-On Compute Capability 2.0 devices, the maximum shared memory size per block is 48KB, meaning that if the kernel was launched with 1 block, it could access all 48KB of memory. If two blocks were used, each block would have 24KB of memory. 
-
-To be able to fit the entire sample set in shared memory, I had to keep the maximum shared memory per block at it's highest by using as few blocks as possible. I used the maximum of 1024 threads per block to reduce the number of required blocks.  
 
 Using any number of 8-byte samples below 2048, which would use up to 2 blocks of 1024 threads and 24KB of shared memory, allows all samples for each block to fit into their shared memory. 
 
@@ -104,6 +109,7 @@ If using more than 2048 8-byte samples, resulting in using 3 or more blocks, res
 
 Even though we are accessing faster memory, it's size limitations causes resource availability delays when using larger data sets, which results in higher latency and lower performance. 
 
+Figure \ref{fig:shared_vs_global_graph} shows the kernel execution time when using shared memory against global memory. We can see the global execution time is lower than shared memory. This is likely because the time taken for each block to copy the data set from global to shared (while other threads wait idle for the shared memory) is greater than the time of just accessing global memory.
 
 \subsection{MPI}
 With DFT, each sample must have operate on all other samples. In my implementation, I must first copy the complete sample array to each node. 
