@@ -16,10 +16,125 @@
 #define M_PI 3.14159265358979323846
 #include <time.h>
 #include <string.h>
+#include <windows.h>
 
 #define _in_
 #define _out_
 #define _inout_
+
+char *input_file_path = "../data/sine.large.csv";
+
+__shared__ double a_shared[];
+
+double  timer_freq = 0;
+
+#define TIME_DECL(name) \
+        __int64 name##_start; \
+        double  name
+
+#define TIME_START(d) \
+        timer_start(&##d##_start, &timer_freq);
+
+#define __TIME_STOP(d) \
+        d = timer_stop(&##d##_start, &timer_freq);
+
+#define TIME_STOP(d) \
+        __TIME_STOP(d) \
+        printf("\t" # d "\t%f ms\r\n", d);
+
+TIME_DECL(time_alloc);
+TIME_DECL(time_kernel);
+
+int read_get_lines(char *path)
+{
+        FILE *f;
+        int ch, nlines = 0;
+
+        f = fopen(path, "r");
+        if (!f) {
+                return 0;
+        }
+
+        while ((ch = fgetc(f)) != EOF) {
+                if (ch == '\n') {
+                        nlines++;
+                }
+        }
+
+        fclose(f);
+
+        return nlines;
+}
+
+int read_into_v(char *path, double **v, int *vn)
+{
+        FILE *f;
+        char line_buf[256];
+        char *lp;
+
+        int line = 0;
+        int col = 0;
+        int i = 0;
+        int j = 0;
+
+        *vn = read_get_lines(path);
+        *v = (double*)calloc(*vn, sizeof(double));
+
+        f = fopen(path, "r");
+        if (!f) {
+                return 0;
+        }
+
+        while (fgets(line_buf, 256, f)) {
+                if (++line > 2) {
+                        lp = strtok(line_buf, ",");
+                        while (lp != NULL) {
+                                if (col == 1) {
+                                        double val = -1;
+                                        //printf("%s\r\n", lp);
+                                        if (sscanf(lp, "%lf", &val) == 1) {
+                                                (*v)[i++] = val;
+                                        }
+                                }
+                                lp = strtok(NULL, ",");
+                                col++;
+                        }
+                        col = 0;
+                }
+        }
+}
+
+void fprint_vec(FILE *f, double *v, int n)
+{
+        int i;
+        FILE *f_out;
+
+        if (f) f_out = f;
+        else f_out = stdout;
+        for (i = 0; i < n; i++) {
+                fprintf(f_out, "%d,%.2lf\n", i, v[i]);
+        }
+}
+
+void timer_start(__int64 * start, double *freq)
+{
+        LARGE_INTEGER li;
+
+        if (!QueryPerformanceFrequency(&li)) return;
+
+        *freq = (double)(li.QuadPart / 1000.0);
+
+        QueryPerformanceCounter(&li);
+        *start = li.QuadPart;
+}
+
+double timer_stop(__int64 * start, double *freq)
+{
+        LARGE_INTEGER li;
+        QueryPerformanceCounter(&li);
+        return (double)(li.QuadPart - *start) / *freq;
+}
+
 
 int assert_vec(double *v, double *vt, int n)
 {
@@ -51,27 +166,37 @@ int seq_dft(
                         sumimag -= x[n] * sin(n * k * 2 * M_PI / xn);
                 }
 
-                (*fx)[k] = abs(sumreal*sumreal) + abs(sumimag*sumimag);
+                (*fx)[k] = fabs(sumreal*sumreal) + fabs(sumimag*sumimag);
         }
 
         return 0;
 }
 
-__global__ void kernel_dft(int xn, double *a, double *q)
+__global__ void kernel_dft(int xn, double *a, double *q, int block_size)
 {
         int n;
+        extern __shared__ double a_shared[];
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx > xn) return; // Stop threads in block outside of xn
+        
+        // Stop threads in block outside of xn
+        if (idx > xn) return;
 
+        // First thread of each block must copy global memory to shared
+        if (idx % block_size == 0) {
+                memcpy(a_shared, a, xn * sizeof(double));
+        }
+        __syncthreads();
+
+        // Do the DFT for this sample[idx]
         double sum_real = 0;
         double sum_imag = 0;
         for (n = 0; n < xn; n++) {
-                sum_real += a[n] * cos(n * idx * 2 * M_PI / xn);
-                sum_imag -= a[n] * sin(n * idx * 2 * M_PI / xn);
+                sum_real += a_shared[n] * cos(n * idx * 2 * M_PI / xn);
+                sum_imag -= a_shared[n] * sin(n * idx * 2 * M_PI / xn);
         }
 
         // Write result to output vector
-        q[idx] = abs(sum_real*sum_real) + abs(sum_imag * sum_imag);
+        q[idx] = fabs(sum_real*sum_real) + fabs(sum_imag * sum_imag);
 }
 
 cudaError_t cu_dft(
@@ -82,7 +207,7 @@ cudaError_t cu_dft(
         double *dev_q = NULL;
         cudaError_t cuda_status;
 
-        int block_size = 512;
+        int block_size = 1024;
         int num_blocks = (xn + block_size - 1) / block_size;
         printf("block_size: %d num_blocks: %d xn: %d\r\n",
                 block_size, num_blocks, xn);
@@ -91,13 +216,21 @@ cudaError_t cu_dft(
         *fx = (double*)calloc(xn, sizeof(double));
 
         // Allocate GPU buffers for two vectors (one input, one output)
+        TIME_START(time_alloc);
         cuda_status = cudaMalloc(&dev_x, xn * sizeof(double));
         cuda_status = cudaMalloc(&dev_q, xn * sizeof(double));
+        TIME_STOP(time_alloc);
 
         // Copy input vectors from host memory to GPU buffers.
         cuda_status = cudaMemcpy(dev_x, x, xn * sizeof(double), cudaMemcpyHostToDevice);
 
-        kernel_dft <<<num_blocks, block_size>>>(xn, dev_x, dev_q);
+        TIME_START(time_kernel);
+        kernel_dft <<< 
+                num_blocks, 
+                block_size, 
+                xn * sizeof(double)>>> (xn, dev_x, dev_q, block_size);
+        cudaDeviceSynchronize();
+        TIME_STOP(time_kernel);
 
         // Check for any errors launching the kernel
         cuda_status = cudaGetLastError();
@@ -131,8 +264,8 @@ int main()
         int     samples;
         int     i;
 
-        read_into_v("../data/square.csv", &vt, &samples);
-        read_into_v("../data/square.csv", &sf, &samples);
+        read_into_v(input_file_path, &vt, &samples);
+        read_into_v(input_file_path, &sf, &samples);
 
         out_dft = fopen("../test/dft.txt", "w");
         if (!out_dft) {
@@ -144,7 +277,7 @@ int main()
         //print_vec(out_dft, sf, samples);
 
         cu_dft(vt, samples, &vf);
-        print_vec(out_dft, sf, samples);
+        fprint_vec(out_dft, sf, samples);
 
         printf("assert_vec: %s\r\n", 
                 assert_vec(sf, vf, samples)? "SUCCESS" : "FAIL");
