@@ -22,12 +22,17 @@
 #define _out_
 #define _inout_
 
+// Input data set
+//char *input_file_path = "../data/sine.10000.csv";
 char *input_file_path = "../data/sine.large.csv";
+//char *input_file_path = "../data/sine.csv";
 
+// Toggle building cuda kernel with shared memory
+#define USE_CUDA_SHARED 1
 __shared__ double a_shared[];
 
+// Time recording
 double  timer_freq = 0;
-
 #define TIME_DECL(name) \
         __int64 name##_start; \
         double  name
@@ -45,6 +50,7 @@ double  timer_freq = 0;
 TIME_DECL(time_alloc);
 TIME_DECL(time_kernel);
 
+// Helper functions
 int read_get_lines(char *path)
 {
         FILE *f;
@@ -135,7 +141,6 @@ double timer_stop(__int64 * start, double *freq)
         return (double)(li.QuadPart - *start) / *freq;
 }
 
-
 int assert_vec(double *v, double *vt, int n)
 {
         while (n--) {
@@ -145,7 +150,7 @@ int assert_vec(double *v, double *vt, int n)
         return 1;
 }
 
-// Sequential implementation of the DFT algorithm
+// Sequential implementation of the DFT algorithm for comparison
 int seq_dft(
         _in_ double *x, _in_ int xn,
         _out_ double **fx)
@@ -175,24 +180,33 @@ int seq_dft(
 __global__ void kernel_dft(int xn, double *a, double *q, int block_size)
 {
         int n;
+#if USE_CUDA_SHARED == 1
         extern __shared__ double a_shared[];
+#endif
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
         
         // Stop threads in block outside of xn
         if (idx > xn) return;
 
+#if USE_CUDA_SHARED == 1
         // First thread of each block must copy global memory to shared
         if (idx % block_size == 0) {
                 memcpy(a_shared, a, xn * sizeof(double));
         }
         __syncthreads();
+#endif
 
         // Do the DFT for this sample[idx]
         double sum_real = 0;
         double sum_imag = 0;
         for (n = 0; n < xn; n++) {
+#if USE_CUDA_SHARED == 1
                 sum_real += a_shared[n] * cos(n * idx * 2 * M_PI / xn);
                 sum_imag -= a_shared[n] * sin(n * idx * 2 * M_PI / xn);
+#else
+                sum_real += a[n] * cos(n * idx * 2 * M_PI / xn);
+                sum_imag -= a[n] * sin(n * idx * 2 * M_PI / xn);
+#endif
         }
 
         // Write result to output vector
