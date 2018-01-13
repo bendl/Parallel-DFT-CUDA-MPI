@@ -10,6 +10,7 @@
 #include "soft354_file.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <windows.h>
 
 int read_get_lines(char *path)
 {
@@ -70,7 +71,7 @@ int read_into_v(char *path, double **v, int *vn)
         }
 }
 
-void print_vec(FILE *f, double *v, int n)
+void fprint_vec(FILE *f, double *v, int n)
 {
         int i;
         FILE *f_out;
@@ -81,3 +82,23 @@ void print_vec(FILE *f, double *v, int n)
                 fprintf(f_out, "%d,%.2lf\n", i, v[i]);
         }
 }
+
+void timer_start(__int64 * start, double *freq)
+{
+        LARGE_INTEGER li;
+        
+        if (!QueryPerformanceFrequency(&li)) return;
+
+        *freq = (double)(li.QuadPart / 1000.0);
+
+        QueryPerformanceCounter(&li);
+        *start = li.QuadPart;
+}
+
+double timer_stop(__int64 * start, double *freq)
+{
+        LARGE_INTEGER li;
+        QueryPerformanceCounter(&li);
+        return (double)(li.QuadPart - *start) / *freq;
+}
+
