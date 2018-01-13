@@ -17,6 +17,8 @@
 #include <time.h>
 #include <string.h>
 
+#include "../util/soft354_file.h"
+
 #define _in_
 #define _out_
 #define _inout_
@@ -51,7 +53,7 @@ int seq_dft(
                         sumimag -= x[n] * sin(n * k * 2 * M_PI / xn);
                 }
 
-                (*fx)[k] = abs(sumreal*sumreal) + abs(sumimag*sumimag);
+                (*fx)[k] = fabs(sumreal*sumreal) + fabs(sumimag*sumimag);
         }
 
         return 0;
@@ -71,7 +73,7 @@ __global__ void kernel_dft(int xn, double *a, double *q)
         }
 
         // Write result to output vector
-        q[idx] = abs(sum_real*sum_real) + abs(sum_imag * sum_imag);
+        q[idx] = fabs(sum_real*sum_real) + fabs(sum_imag * sum_imag);
 }
 
 cudaError_t cu_dft(
