@@ -24,6 +24,8 @@
 
 char *input_file_path = "../data/sine.large.csv";
 
+__shared__ double a_shared[];
+
 double  timer_freq = 0;
 
 #define TIME_DECL(name) \
@@ -170,19 +172,27 @@ int seq_dft(
         return 0;
 }
 
-__global__ void kernel_dft(int xn, double *a, double *q)
+__global__ void kernel_dft(int xn, double *a, double *q, int block_size)
 {
         int n;
+        extern __shared__ double a_shared[];
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
         
         // Stop threads in block outside of xn
         if (idx > xn) return;
 
+        // First thread of each block must copy global memory to shared
+        if (idx % block_size == 0) {
+                memcpy(a_shared, a, xn * sizeof(double));
+        }
+        __syncthreads();
+
+        // Do the DFT for this sample[idx]
         double sum_real = 0;
         double sum_imag = 0;
         for (n = 0; n < xn; n++) {
-                sum_real += a[n] * cos(n * idx * 2 * M_PI / xn);
-                sum_imag -= a[n] * sin(n * idx * 2 * M_PI / xn);
+                sum_real += a_shared[n] * cos(n * idx * 2 * M_PI / xn);
+                sum_imag -= a_shared[n] * sin(n * idx * 2 * M_PI / xn);
         }
 
         // Write result to output vector
@@ -197,7 +207,7 @@ cudaError_t cu_dft(
         double *dev_q = NULL;
         cudaError_t cuda_status;
 
-        int block_size = 512;
+        int block_size = 1024;
         int num_blocks = (xn + block_size - 1) / block_size;
         printf("block_size: %d num_blocks: %d xn: %d\r\n",
                 block_size, num_blocks, xn);
@@ -215,7 +225,10 @@ cudaError_t cu_dft(
         cuda_status = cudaMemcpy(dev_x, x, xn * sizeof(double), cudaMemcpyHostToDevice);
 
         TIME_START(time_kernel);
-        kernel_dft <<<num_blocks, block_size>>>(xn, dev_x, dev_q);
+        kernel_dft <<< 
+                num_blocks, 
+                block_size, 
+                xn * sizeof(double)>>> (xn, dev_x, dev_q, block_size);
         cudaDeviceSynchronize();
         TIME_STOP(time_kernel);
 
