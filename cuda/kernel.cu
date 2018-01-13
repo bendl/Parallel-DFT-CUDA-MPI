@@ -18,11 +18,30 @@
 #include <string.h>
 #include <windows.h>
 
-#include "../util/soft354_file.h"
-
 #define _in_
 #define _out_
 #define _inout_
+
+char *input_file_path = "../data/sine.large.csv";
+
+double  timer_freq = 0;
+
+#define TIME_DECL(name) \
+        __int64 name##_start; \
+        double  name
+
+#define TIME_START(d) \
+        timer_start(&##d##_start, &timer_freq);
+
+#define __TIME_STOP(d) \
+        d = timer_stop(&##d##_start, &timer_freq);
+
+#define TIME_STOP(d) \
+        __TIME_STOP(d) \
+        printf("\t" # d "\t%f ms\r\n", d);
+
+TIME_DECL(time_alloc);
+TIME_DECL(time_kernel);
 
 int read_get_lines(char *path)
 {
@@ -115,7 +134,6 @@ double timer_stop(__int64 * start, double *freq)
 }
 
 
-
 int assert_vec(double *v, double *vt, int n)
 {
         while (n--) {
@@ -156,7 +174,9 @@ __global__ void kernel_dft(int xn, double *a, double *q)
 {
         int n;
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx > xn) return; // Stop threads in block outside of xn
+        
+        // Stop threads in block outside of xn
+        if (idx > xn) return;
 
         double sum_real = 0;
         double sum_imag = 0;
@@ -186,13 +206,18 @@ cudaError_t cu_dft(
         *fx = (double*)calloc(xn, sizeof(double));
 
         // Allocate GPU buffers for two vectors (one input, one output)
+        TIME_START(time_alloc);
         cuda_status = cudaMalloc(&dev_x, xn * sizeof(double));
         cuda_status = cudaMalloc(&dev_q, xn * sizeof(double));
+        TIME_STOP(time_alloc);
 
         // Copy input vectors from host memory to GPU buffers.
         cuda_status = cudaMemcpy(dev_x, x, xn * sizeof(double), cudaMemcpyHostToDevice);
 
+        TIME_START(time_kernel);
         kernel_dft <<<num_blocks, block_size>>>(xn, dev_x, dev_q);
+        cudaDeviceSynchronize();
+        TIME_STOP(time_kernel);
 
         // Check for any errors launching the kernel
         cuda_status = cudaGetLastError();
@@ -226,8 +251,8 @@ int main()
         int     samples;
         int     i;
 
-        read_into_v("../data/square.csv", &vt, &samples);
-        read_into_v("../data/square.csv", &sf, &samples);
+        read_into_v(input_file_path, &vt, &samples);
+        read_into_v(input_file_path, &sf, &samples);
 
         out_dft = fopen("../test/dft.txt", "w");
         if (!out_dft) {
