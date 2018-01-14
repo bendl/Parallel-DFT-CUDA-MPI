@@ -1,4 +1,4 @@
-\documentclass[8pt,a4paper]{article}
+\documentclass[11pt,a4paper]{article}
 \usepackage[margin=0.8in]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath}
@@ -86,7 +86,25 @@ In this report, I will be implementing the DFT to convert signals in the time do
 \end{figure}
 
 \section{Implementation}
+
 \subsection{CUDA}
+
+
+
+As each operation on each sample requires values from all other samples, global memory accesses will be largest performance bottleneck. To reduce the amount of global memory accesses, I had the first thread of each block copy the complete global memory copy of the samples to a local shared memory buffer, which the DFT kernel would access instead of the global memory. 
+ 
+\begin{wrapfigure}{r}{0.4\textwidth}
+\begin{center}
+\includegraphics[scale=0.6]{cuda_impl1}
+\end{center}
+\caption{Average kernel execution time using shared vs. global memory.}
+\label{fig:cuda_impl1}
+\end{wrapfigure}
+
+On Compute Capability 2.0 devices, the maximum shared memory size per block is 48KB, meaning that if the kernel was launched with 1 block, it could access all 48KB of memory. If two blocks were used, each block would have 24KB of memory. 
+
+To be able to fit the entire sample set in shared memory, I had to keep the maximum shared memory per block at it's highest by using as few blocks as possible. I used the maximum of 1024 threads per block to reduce the number of required blocks. 
+
 
 \subsubsection{Dynamic Shared Memory}
 As each operation on each sample requires values from all other samples, global memory accesses will be largest performance bottleneck. To reduce the amount of global memory accesses, I had the first thread of each block copy the complete global memory copy of the samples to a local shared memory buffer, which the DFT kernel would access instead of the global memory. 
