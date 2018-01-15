@@ -88,25 +88,25 @@ In this report, I will be implementing the DFT to convert signals in the time do
 \section{Implementation}
 
 \subsection{CUDA}
+The CUDA implementation utilises a host device, typically a CPU, to retrieve the input samples from a file and store the resulting output. 
 
+After reading the samples from a .csv file, the host allocates 2 global memory buffers on the device for the samples and output, and copies the input samples to the device. 
 
-
-As each operation on each sample requires values from all other samples, global memory accesses will be largest performance bottleneck. To reduce the amount of global memory accesses, I had the first thread of each block copy the complete global memory copy of the samples to a local shared memory buffer, which the DFT kernel would access instead of the global memory. 
- 
 \begin{wrapfigure}{r}{0.4\textwidth}
 \begin{center}
 \includegraphics[scale=0.6]{cuda_impl1}
 \end{center}
-\caption{Average kernel execution time using shared vs. global memory.}
+\caption{CUDA implementation control flow diagram showing memory }
 \label{fig:cuda_impl1}
 \end{wrapfigure}
 
-On Compute Capability 2.0 devices, the maximum shared memory size per block is 48KB, meaning that if the kernel was launched with 1 block, it could access all 48KB of memory. If two blocks were used, each block would have 24KB of memory. 
+As the input samples are 1D dimensional, kernels are launched with a 1D grids and blocks. 
 
-To be able to fit the entire sample set in shared memory, I had to keep the maximum shared memory per block at it's highest by using as few blocks as possible. I used the maximum of 1024 threads per block to reduce the number of required blocks. 
+The kernel assigns each output sample to a unique thread, identified by \textit{idx}. Each output sample must be calculated by iterating over the entire input sample vector. As the input sample size can contain many samples, the kernel will require many accesses to global memory. A technique, utilising the device's shared memory, is described in section \ref{sect:Dynamic Shared Memory} to reduce the number of global memory accesses.
 
+Each thread writes it's result back into the global output buffer, which is then copied back from the device to the host.
 
-\subsubsection{Dynamic Shared Memory}
+\subsubsection{Dynamic Shared Memory} \label{sect:Dynamic Shared Memory}
 As each operation on each sample requires values from all other samples, global memory accesses will be largest performance bottleneck. To reduce the amount of global memory accesses, I had the first thread of each block copy the complete global memory copy of the samples to a local shared memory buffer, which the DFT kernel would access instead of the global memory. 
 
 On Compute Capability 2.0 devices, the maximum shared memory size per block is 48KB, meaning that if the kernel was launched with 1 block, it could access all 48KB of memory. If two blocks were used, each block would have 24KB of memory. 
@@ -130,7 +130,7 @@ Even though we are accessing faster memory, it's size limitations causes resourc
 Figure \ref{fig:shared_vs_global_graph} shows the kernel execution time when using shared memory against global memory. We can see the global execution time is lower than shared memory. This is likely because the time taken for each block to copy the data set from global to shared (while other threads wait idle for the shared memory) is greater than the time of just accessing global memory.
 
 \subsection{MPI}
-With DFT, each sample must have operate on all other samples. In my implementation, I must first copy the complete sample array to each node. 
+The MPI implementation is similar to the CUDA kernel. Instead of each output sample being assigned to a thread, the output samples are split across a range of nodes. 
 
 \begin{figure}[H]
 \begin{center}

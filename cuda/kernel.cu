@@ -47,10 +47,12 @@ double  timer_freq = 0;
         __TIME_STOP(d) \
         printf("\t" # d "\t%f ms\r\n", d);
 
+// Add things to time
 TIME_DECL(time_alloc);
 TIME_DECL(time_kernel);
 
 // Helper functions
+/// Returns number of lines in file <path>
 int read_get_lines(char *path)
 {
         FILE *f;
@@ -72,6 +74,8 @@ int read_get_lines(char *path)
         return nlines;
 }
 
+/// Reads csv file <path> into vector *v
+/// Populates number of samples in *vn
 int read_into_v(char *path, double **v, int *vn)
 {
         FILE *f;
@@ -110,6 +114,7 @@ int read_into_v(char *path, double **v, int *vn)
         }
 }
 
+// Prints an array to screen
 void fprint_vec(FILE *f, double *v, int n)
 {
         int i;
@@ -141,6 +146,7 @@ double timer_stop(__int64 * start, double *freq)
         return (double)(li.QuadPart - *start) / *freq;
 }
 
+// Tests if two arrays are equal
 int assert_vec(double *v, double *vt, int n)
 {
         while (n--) {
@@ -177,12 +183,20 @@ int seq_dft(
         return 0;
 }
 
-__global__ void kernel_dft(int xn, double *a, double *q, int block_size)
-{
+// CUDA kernel for DFT
+// Each sample is assigned a thread
+__global__ void kernel_dft(
+        int xn,                 // Number of samples
+        double *a,              // Input time vector
+        double *q,              // Output frequency vector
+        int block_size          // Block x dimension
+){
         int n;
 #if USE_CUDA_SHARED == 1
         extern __shared__ double a_shared[];
 #endif
+        // 1D grid and block dimensions
+        // Sample index
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
         
         // Stop threads in block outside of xn
@@ -193,6 +207,7 @@ __global__ void kernel_dft(int xn, double *a, double *q, int block_size)
         if (idx % block_size == 0) {
                 memcpy(a_shared, a, xn * sizeof(double));
         }
+        // Sync all threads for shared mem to be ready
         __syncthreads();
 #endif
 
@@ -269,7 +284,8 @@ error:
 
 int main()
 {
-        FILE    *out_dft; // Output file
+        // Output file
+        FILE    *out_dft;
 
         // Hyper parameters
         double  *sf, // sequentual dft f(x)
