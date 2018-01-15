@@ -142,6 +142,9 @@ The MPI implementation is similar to the CUDA kernel. Instead of each output sam
 
 \section{Evaluation}
 \subsection{Measuring Performance}
+Performance metrics have been captured using Windows' `\textit{QueryPerformanceCounter}` and the `NSight Performance Analysis` tools. Helper macros, `\textit{TIME\_START}` and `\textit{TIME\_STOP}` are used to record timed code sections.
+
+Key performance metrics that have been analysed are: Memory allocation time, MPI broadcast and Gather time, MPI DFT calculation time, CUDA kernel execution time, CUDA memory operations time, CUDA kernel occupancy, and number of blocked CUDA warps.
 
 \subsection{MPI Node Count}
 Note: All MPI performance measurements were taken on an Intel i5-6200U CPU clocked at 2.30 GHz.
@@ -162,7 +165,10 @@ As seen in Figure \ref{fig:mpi_eval_nodes}, using few MPI nodes requires each no
 
 Increasing the number of MPI nodes reduces the average DFT calculation time per node, as each node has fewer samples to work on, but inter-process communication is greatly increased. The MPI implementation uses blocking barrier communication messages to share and collect the results. With many nodes, it takes longer for MPI to synchronise the nodes resulting in longer total run-times.
 
+From this, I predict that the optimum number of MPI nodes per machine for this algorithm is approximately 2x the total number of CPU threads.
+
 \subsection{CUDA Threads Per Block}
+Increasing the number of threads per block, whilst keeping the grid 1 dimensional, reduces the number of threads that need to write to shared memory. As discussed in \ref{sect:Dynamic Shared Memory}, the first node of each block copies the sample buffer from global memory to shared memory. This allows warps that would be waiting for shared memory to be ready, to become active and increase the occupancy of the kernel.
 
 \begin{figure}[H]%
     \centering
@@ -171,8 +177,26 @@ Increasing the number of MPI nodes reduces the average DFT calculation time per 
     \subfloat[Blocked Warps per block and Occupancy vs. Threads per Block.]{{\includegraphics[width=7.5cm]{cuda_eval_occu} }}%
     \vspace{5pt}
     \caption{}%
-    \label{fig:gridwatch}%
+    \label{fig:cuda_threads_per_block}%
 \end{figure}
+
+Figure \ref{fig:cuda_threads_per_block} (a) shows the kernel execution time decreasing as the number of threads per block increases. Figure \ref{fig:cuda_threads_per_block} (b) shows the number of blocked warps decreasing and occupancy increasing as the number of threads per block increases.
+
+\section{Further Improvements}
+\subsection{Sub-sample partitioning}
+The current algorithmic approach to both MPI and CUDA solutions is to assign output samples to threads and nodes. The downside of this method is that each output sample must act upon all other input samples and is thus exponential in terms of computational complexity.
+
+A solution to this is to assign a 'master' thread/node to each sample, then assign a unique thread for each input sample. The input sample threads would calculate their real and imaginary parts, which when required by a master thread, would reduce using a custom sum reduction method and then multiply by the input sample.
+
+This solution would require twice as many threads/nodes as samples but would reduce the computation time by having each thread work out a partial solution. The master thread will not be required to calculate real and imaginary parts for all samples; it will just multiply the result from other threads by it's input sample value. The solution will still be of $O(n^2)$ complexity however it's execution time, for each sample, will be reduced linearly.
+
+\subsection{CUDA - Increase Thread-block dimensions}
+The current CUDA implementation uses a 1 dimension grid and block layout. Currently, my algorithm is limited to 1024*1024 threads (if assigning 1 thread per sample). As seen in section \ref{sect:Dynamic Shared Memory}, fewer blocks results in higher occupancy, so using 2 or 3 dimension thread blocks will increase our thread and sample limit without increasing the block count. 
+
+\subsection{CUDA cuDoubleComplex}
+My implementation uses 2 double variables, \textit{sum\_real} and \textit{sum\_imag}, to represent the real and imaginary parts of complex numbers.
+
+Using CUDA's built in \textit{cudoubleComplex} type will likely increase performance on a per-instruction basis. CUDA provides built in intrinsic functions for double and complex numbers, like \textit{cuCmul}, that map directly to device instructions.
 
 \newpage
 \section{Conclusion}
