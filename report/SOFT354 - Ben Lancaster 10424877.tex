@@ -143,5 +143,40 @@ The MPI implementation is similar to the CUDA kernel. Instead of each output sam
 \section{Evaluation}
 \subsection{Measuring Performance}
 
+\subsection{MPI Node Count}
+Note: All MPI performance measurements were taken on an Intel i5-6200U CPU clocked at 2.30 GHz.
+
+When running MPI on a single machine, MPI will spawn multiple nodes (processes) that are subject the OS's scheduling strategy. In addition, depending on available CPU resources, like core count, MPI and the OS will assign CPU resources to each processes.
+
+\begin{wrapfigure}{r}{0.5\textwidth}
+\begin{center}
+\includegraphics[scale=0.7]{mpi_eval_nodes}
+\end{center}
+\caption{Time breakdown of MPI program when run with different number of nodes.}
+\label{fig:mpi_eval_nodes}
+\end{wrapfigure}
+
+Running on a 2 core, 4 thread CPU, with more MPI nodes than CPU threads, the OS will need to schedule each node with other running programs, which will reduce our MPI program's performance.
+
+As seen in Figure \ref{fig:mpi_eval_nodes}, using few MPI nodes requires each node to work on more samples, which increases the average DFT calculate time. The small amount of nodes also means that little inter-process communication needs to take place to broadcast and gather the results.
+
+Increasing the number of MPI nodes reduces the average DFT calculation time per node, as each node has fewer samples to work on, but inter-process communication is greatly increased. The MPI implementation uses blocking barrier communication messages to share and collect the results. With many nodes, it takes longer for MPI to synchronise the nodes resulting in longer total run-times.
+
+\subsection{CUDA Threads Per Block}
+
+\begin{figure}[H]%
+    \centering
+    \subfloat[Time breakdown of CUDA program when run with different number of nodes.]{{\includegraphics[width=7.5cm]{cuda_eval_threads} }}%
+    \qquad
+    \subfloat[Blocked Warps per block and Occupancy vs. Threads per Block.]{{\includegraphics[width=7.5cm]{cuda_eval_occu} }}%
+    \vspace{5pt}
+    \caption{}%
+    \label{fig:gridwatch}%
+\end{figure}
+
+\newpage
+\section{Conclusion}
+
+
 
 \end{document}
