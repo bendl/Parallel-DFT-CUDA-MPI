@@ -28,7 +28,7 @@ char *input_file_path = "../data/sine.large.csv";
 //char *input_file_path = "../data/sine.csv";
 
 // Toggle building cuda kernel with shared memory
-#define USE_CUDA_SHARED 1
+#define USE_CUDA_SHARED 0
 __shared__ double a_shared[];
 
 // Time recording
@@ -49,6 +49,7 @@ double  timer_freq = 0;
 
 TIME_DECL(time_alloc);
 TIME_DECL(time_kernel);
+TIME_DECL(time_total);
 
 // Helper functions
 int read_get_lines(char *path)
@@ -221,13 +222,15 @@ cudaError_t cu_dft(
         double *dev_q = NULL;
         cudaError_t cuda_status;
 
-        int block_size = 1024;
+        int block_size = 64;
         int num_blocks = (xn + block_size - 1) / block_size;
         printf("block_size: %d num_blocks: %d xn: %d\r\n",
                 block_size, num_blocks, xn);
 
         // Allocate host output memory
         *fx = (double*)calloc(xn, sizeof(double));
+
+        TIME_START(time_total);
 
         // Allocate GPU buffers for two vectors (one input, one output)
         TIME_START(time_alloc);
@@ -240,9 +243,10 @@ cudaError_t cu_dft(
 
         TIME_START(time_kernel);
         kernel_dft <<< 
-                num_blocks, 
-                block_size, 
-                xn * sizeof(double)>>> (xn, dev_x, dev_q, block_size);
+                num_blocks,             // grid dimensions
+                block_size,             // block dimensions
+                xn * sizeof(double)     // dynamic shared memory size
+                >>> (xn, dev_x, dev_q, block_size);
         cudaDeviceSynchronize();
         TIME_STOP(time_kernel);
 
@@ -259,6 +263,8 @@ cudaError_t cu_dft(
                 printf("cudaMemcpy failed!");
                 goto error;
         }
+
+        TIME_STOP(time_total);
 
 error:
         cudaFree(dev_x);
