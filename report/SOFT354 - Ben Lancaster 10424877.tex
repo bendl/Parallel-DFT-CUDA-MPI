@@ -70,6 +70,8 @@ My placement as a Firmware Engineer at Spirent, a world leader in GNSS simulator
 \section{Introduction}
 This report discusses the implementation and performance of the Discrete Fourier Transform (DFT) algorithm in CUDA and MPI.
 
+In signal processing, DFTs are used to represent signals as a series of sinusoidal waveforms at different frequencies and amplitudes. This is useful when wanting to identify specific audio components in speed recognition. 
+
 DFT is largely used in digital signal and image processing applications. 
 
 In this report, I will be implementing the DFT to convert signals in the time domain to the frequency domain.
@@ -83,6 +85,24 @@ In this report, I will be implementing the DFT to convert signals in the time do
     \caption{\textbf{Left:} A compound signal made up of 1, 5, 20, 100, and 200 Hz sine waves in the time domain. \textbf{Right:} Frequency domain representation showing high amplitude peaks for the 1, 5, 20, 100, and 200 Hz waveforms.}%
     \label{fig:gridwatch}%
 \end{figure}
+
+The 1 dimensional Discrete Fourier Transform algorithm is show in Figure \ref{fig:dft_algorithm}.
+
+The algorithm in a complex vector and produces a complex vector of the same length in the frequency domain.
+
+Each output sample must be calculated by acting upon all other samples in the input vector. This means the algorithm has a computation complexity of $O(n^2)$.
+
+A faster implementation of the DFT, called Fast Fourier Transform, achieves similar results in only $O(n.\log(n))$ time.
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[scale=1]{dft_algorithm}
+\end{center}
+\caption{The Discrete Fourier Transform definition.}
+\label{fig:dft_algorithm}
+\end{figure}
+
+Because of FFT having better speed and space performance, it is used in place of the DFT algorithm in libraries such as CUDA, Matlab, and Numpy. For this reason, I will be exploring techniques 
 
 \section{Implementation}
 
