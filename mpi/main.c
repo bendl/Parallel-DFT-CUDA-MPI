@@ -17,8 +17,6 @@
 
 #include <mpi.h>
 
-#include "../util/soft354_file.h"
-
 #define M_PI 3.14159265358979323846
 #define _in_
 #define _out_
@@ -42,33 +40,32 @@ FILE    *out_dft; // Output file
 #define NOT_ROOT        if (!IS_ROOT)
 
 
+
+// Time recording
 double  timer_freq = 0;
-__int64 time_total_start;
-double  time_total;
-
-__int64 time_bcast_samples_start;
-double  time_bcast_samples;
-
-__int64 time_dft_start;
-double  time_dft;
-
-__int64 time_gather_start;
-double  time_gather;
+#define TIME_DECL(name) \
+        __int64 name##_start; \
+        double  name
 
 #define TIME_START(d) \
-        timer_start(d, &timer_freq);
+        timer_start(&##d##_start, &timer_freq);
 
-#define __TIME_STOP(d, out) \
-        out = timer_stop(d, &timer_freq);
+#define __TIME_STOP(d) \
+        d = timer_stop(&##d##_start, &timer_freq);
 
-#define TIME_STOP(d, out) \
-        __TIME_STOP(d, out) \
-        printf("%d\t" #out "\t%f ms\r\n", world_rank, out);
+#define TIME_STOP(d) \
+        __TIME_STOP(d) \
+        printf("\t" # d "\t%f ms\r\n", d);
 
-#define TIME_STOP_R(d, out) \
-        __TIME_STOP(d, out) \
-        ROOT_ONLY { printf("%d\t" #out "\t%f ms\r\n", world_rank, out); }
-        
+#define TIME_STOP_R(d) \
+        __TIME_STOP(d) \
+        ROOT_ONLY { printf("\t" # d "\t%f ms\r\n", d); }
+
+TIME_DECL(time_gather);
+TIME_DECL(time_bcast);
+TIME_DECL(time_total);
+TIME_DECL(time_dft);
+TIME_DECL(time_seq_dft);
 
 int read_get_lines(char *path)
 {
@@ -188,7 +185,7 @@ int seq_dft(
         return 0;
 }
 
-// Sequential implementation of the DFT algorithm
+// Parallel implementation of DFT algorithm in MPI
 int mpi_dft(
         _in_ double *vt,        // vector time domain
         _in_ int n_start,       // f(n_start) location
@@ -205,22 +202,22 @@ int mpi_dft(
 
         // Perform the dft starting from this sample
         for (k = 0; k < nsamples_per_node; k++) {
-                double sumreal = 0;
-                double sumimag = 0;
-                double sum_out = 0;
-                int sample_start;
+                double  sum_real = 0;
+                double  sum_imag = 0;
+                double  sum_out = 0;
+                int     sample_start;
 
                 // Out of bounds check
                 if ((k + nsamples_start) > nsamples/2) break;
 
                 for (n = 0; n < N; n++) {
-                        sumreal += vt[n] * cos(n * (k + nsamples_start) * 2 * M_PI / N);
-                        sumimag -= vt[n] * sin(n * (k + nsamples_start) * 2 * M_PI / N);
+                        sum_real += vt[n] * cos(n * (k + nsamples_start) * 2 * M_PI / N);
+                        sum_imag -= vt[n] * sin(n * (k + nsamples_start) * 2 * M_PI / N);
                 }
 
-                sum_out = fabs(sumreal*sumreal) + fabs(sumimag*sumimag);
+                sum_out = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
                 //printf("#%d writing %d: %f\r\n", world_rank, k, sum_out);
-                (*fx)[k] = fabs(sumreal*sumreal) + fabs(sumimag*sumimag);
+                (*fx)[k] = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
         }
 
         return 0;
@@ -253,13 +250,21 @@ int main(int argc, char **argv)
                 }
         }
 
+#if 1
+        ROOT_ONLY {
+                TIME_START(time_seq_dft);
+                seq_dft(vt, nsamples, &vf);
+                TIME_STOP(time_seq_dft);
+        }
+#endif
+
         // Total program run time timer
-        TIME_START(&time_total_start);
+        TIME_START(time_total);
 
         // Broadcast the nsamples to each node
-        TIME_START(&time_bcast_samples_start);
+        TIME_START(time_bcast);
         MPI_Bcast(&nsamples, 1, MPI_INT, ROOT_RANK, MPI_COMM_WORLD);
-        TIME_STOP(&time_bcast_samples_start, time_bcast_samples);
+        TIME_STOP(time_bcast);
 
         // Allocate memory for the incoming sample buffer
         NOT_ROOT { 
@@ -275,10 +280,12 @@ int main(int argc, char **argv)
         nsamples_per_node = (nsamples + world_size - 1) / world_size;
         nsamples_start = world_rank * nsamples_per_node;
 
+        /*
         printf("%d/%d nsamples: %d Per node: %d Starting: %d\r\n", 
                 world_rank, world_size, nsamples, nsamples_per_node, nsamples_start);
         printf("Rank %d: First samples: %f %f %f %f\r\n", 
                 world_rank, vt[0], vt[1], vt[2], vt[3]);
+        //*/
 
         if (nsamples_start > nsamples) {
                 // More nodes than datapoints
@@ -295,19 +302,19 @@ int main(int argc, char **argv)
         }
 
         // Perform the parallel dft function
-        TIME_START(&time_dft_start);
+        TIME_START(time_dft);
         mpi_dft(vt, nsamples_start, nsamples, &vf);
-        TIME_STOP_R(&time_dft_start, time_dft);
+        TIME_STOP_R(time_dft);
 
         // Now ROOT_RANK must gather all sub arrays into a single array
-        TIME_START(&time_gather_start);
+        TIME_START(time_gather);
         MPI_Gather(
                 vf,     nsamples_per_node, MPI_DOUBLE, // send
                 vf_all, nsamples_per_node, MPI_DOUBLE, // recv
                 ROOT_RANK, MPI_COMM_WORLD);
-        TIME_STOP_R(&time_gather_start, time_gather);
+        TIME_STOP_R(time_gather);
 
-        TIME_STOP_R(&time_total_start, time_total);
+        TIME_STOP_R(time_total);
 
         ROOT_ONLY {
                 // Write output function
