@@ -105,6 +105,13 @@ A faster implementation of the DFT, called Fast Fourier Transform, achieves simi
 Because of FFT having better speed and space performance, it is used in place of the DFT algorithm in libraries such as CUDA, Matlab, and Numpy. For this reason, I will be exploring techniques 
 
 \section{Implementation}
+This section discusses the design considerations and implementation of the parallel DFT algorithm in CUDA and MPI.
+
+Both programs are run on a quad-core 4-thread Intel i5-4670k CPU at 4.3GHz with an NVIDIA GTX 970 GPU with 4GB memory, 1664 CUDA cores, 1050Mhz base clock, and featuring CUDA Compute Capability 5.2, which supports 1024 threads per block and 48KB shared memory.
+
+The software solution is split into 2 Visual Studio projects: soft354\_cuda and soft354\_mpi, for CUDA and MPI respectively. Only the CUDA and MPI libraries, and the \textit{windows.h} header (for time measurement, see later.) are required to build the two solutions.
+
+The CUDA solution is required to be built for the x64 architecture and the MPI solution is required to be built for the x86 architecture. The differences in the architectures will have a negligible effect on the performance of the programs. 
 
 \subsection{CUDA}
 The CUDA implementation utilises a host device, typically a CPU, to retrieve the input samples from a file and store the resulting output. 
@@ -126,11 +133,23 @@ The kernel assigns each output sample to a unique thread, identified by \textit{
 Each thread writes it's result back into the global output buffer, which is then copied back from the device to the host.
 
 \subsubsection{Dynamic Shared Memory} \label{sect:Dynamic Shared Memory}
-As each operation on each sample requires values from all other samples, global memory accesses will be largest performance bottleneck. To reduce the amount of global memory accesses, I had the first thread of each block copy the complete global memory copy of the samples to a local shared memory buffer, which the DFT kernel would access instead of the global memory. 
+As each operation on each sample requires values from all other samples, global memory accesses will be largest performance bottleneck. To reduce the amount of global memory accesses, I had the first thread of each block copy the complete global memory copy of the samples to a local shared memory buffer, which the DFT kernel would access instead of the global memory. Figure \ref{fig:code_cuda_all} shows the code segment that performs this process.
 
-On Compute Capability 2.0 devices, the maximum shared memory size per block is 48KB, meaning that if the kernel was launched with 1 block, it could access all 48KB of memory. If two blocks were used, each block would have 24KB of memory. 
+On Compute Capability 2.0 devices, the maximum shared memory size per block is 48KB, meaning that if the kernel was launched with 1 block, it could access all 48KB of memory. If two blocks were used, each block would have 24KB of memory available without delay.
 
-To be able to fit the entire sample set in shared memory, I had to keep the maximum shared memory per block at it's highest by using as few blocks as possible. I used the maximum of 1024 threads per block to reduce the number of required blocks.  
+\begin{figure}[H]%
+    \centering
+    \subfloat[CUDA kernel invocation showing amount of dynamic shared memory to allocate.]{{\includegraphics[width=7cm]{code_cuda} }}%
+    \qquad
+    \subfloat[First thread of each block copying all samples to the block's shared memory.]{{\includegraphics[width=8cm]{code_cuda_shared} }}%
+    \vspace{5pt}
+    \caption{}
+    \label{fig:code_cuda_all}%
+\end{figure}
+
+To be able to fit the entire sample set in shared memory, I had to keep the maximum shared memory per block at it's highest by using as few blocks as possible. I used the maximum of 1024 threads per block for the GPU to reduce the number of required blocks.
+
+Using any number of 8-byte samples below 2048, which would use up to 2 blocks of 1024 threads and 24KB of shared memory, allows all samples for each block to fit into their shared memory. 
 
 \begin{wrapfigure}{r}{0.4\textwidth}
 \begin{center}
@@ -140,13 +159,10 @@ To be able to fit the entire sample set in shared memory, I had to keep the maxi
 \label{fig:shared_vs_global_graph}
 \end{wrapfigure}
 
-Using any number of 8-byte samples below 2048, which would use up to 2 blocks of 1024 threads and 24KB of shared memory, allows all samples for each block to fit into their shared memory. 
-
 If using more than 2048 8-byte samples, resulting in using 3 or more blocks, results in the shared memory per block overflowing. The kernel handles this by pausing blocks that do not have enough shared memory ready, and running blocks that do have all their shared memory ready.
+ 
+Even though we are accessing faster memory, it's size limitations causes resource availability delays when using larger data sets, which results in higher latency and lower performance. Figure \ref{fig:shared_vs_global_graph} shows the kernel execution time when using shared memory against global memory. We can see the global execution time is faster than shared memory. This is likely because the time taken for each block to copy the data set from global to shared memory (while other threads wait idle for the shared memory) is greater than the time of just accessing global memory.
 
-Even though we are accessing faster memory, it's size limitations causes resource availability delays when using larger data sets, which results in higher latency and lower performance. 
-
-Figure \ref{fig:shared_vs_global_graph} shows the kernel execution time when using shared memory against global memory. We can see the global execution time is lower than shared memory. This is likely because the time taken for each block to copy the data set from global to shared (while other threads wait idle for the shared memory) is greater than the time of just accessing global memory.
 
 \subsection{MPI}
 The MPI implementation is similar to the CUDA kernel. Instead of each output sample being assigned to a thread, the output samples are split across a range of nodes. 
@@ -165,9 +181,7 @@ Performance metrics have been captured using Windows' `\textit{QueryPerformanceC
 
 Key performance metrics that have been analysed are: Memory allocation time, MPI broadcast and Gather time, MPI DFT calculation time, CUDA kernel execution time, CUDA memory operations time, CUDA kernel occupancy, and number of blocked CUDA warps.
 
-\subsection{MPI Node Count}
-Note: All MPI performance measurements were taken on an Intel i5-6200U CPU clocked at 2.30 GHz.
-
+\subsection{MPI Node Count}\label{sect:MPI Node Count}
 When running MPI on a single machine, MPI will spawn multiple nodes (processes) that are subject the OS's scheduling strategy. In addition, depending on available CPU resources, like core count, MPI and the OS will assign CPU resources to each processes.
 
 \begin{wrapfigure}{r}{0.5\textwidth}
@@ -200,6 +214,28 @@ Increasing the number of threads per block, whilst keeping the grid 1 dimensiona
 \end{figure}
 
 Figure \ref{fig:cuda_threads_per_block} (a) shows the kernel execution time decreasing as the number of threads per block increases. Figure \ref{fig:cuda_threads_per_block} (b) shows the number of blocked warps decreasing and occupancy increasing as the number of threads per block increases.
+
+
+\subsection{Sequential vs. Parallel Algorithm}
+This section compares the \textit{total algorithm time} of the sequential and parallel algorithms. \textit{Total algorithm time} refers to the time taken from after reading the input samples from file to when the output vector has been fully populated with frequency domain values. In the code, this time value is recorded as: \textit{time\_total}. In CUDA, this includes the time taken to copy the host input sample vector to the device and the final output vector from device to host. In MPI, this includes the time taken for all collective communication calls, like broadcasting the input sample vector to each node, the number of samples, and gathering all output subsets.
+
+\begin{wrapfigure}{l}{0.5\textwidth}
+\begin{center}
+\includegraphics[scale=0.7]{seq_vs_par}
+\end{center}
+\caption{Logarithmic total time comparison of Sequential and Parallel algorithms against different sized sample sets.}
+\label{fig:seq_vs_par}
+\end{wrapfigure}
+
+From Figure \ref{fig:seq_vs_par} we can see that the the sequential algorithm's total time is much greater than it's parallel counterparts for all small and large sample sizes.
+
+As both algorithms, sequential and parallel, have $O(n^2)$ complexity, visualizing performance differences with large datasets requires a logarithmic axis.
+
+For smaller sample sizes (less than 5000), the MPI solution outperforms the CUDA solution. This is likely because the root node only needs to broadcast the small input sample vector to each node. As  the sample size gets larger, it must broadcast more samples to each node, and so increasing time taken to do so linearly. 
+
+As the sample size gets larger, in CUDA, the shared memory per block decreases. This results in more kernel warps stalling as their block needs to wait until it's shared memory is ready for the samples it needs. This decreases the kernel's performance. 
+
+For larger sample sizes, CUDA outperforms MPI. This is likely because the amount of MPI node's used is fixed to 8, resulting in more samples per node, while the CUDA implementation can still assign each sample to a unique thread. Section \ref{sect:MPI Node Count} discusses why 8 MPI nodes are used. If a CPU with more resources (cores, threads, and cache) was used, the optimum node count would be greater, resulting in better MPI performance. However, as there are a magnitude more threads available on GPU's, the MPI performance will not out perform the CUDA solution for any large sample sizes.
 
 \section{Further Improvements}
 \subsection{Sub-sample partitioning}

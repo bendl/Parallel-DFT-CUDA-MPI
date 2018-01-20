@@ -171,15 +171,17 @@ int seq_dft(
         *fx = (double*)calloc(xn, sizeof(double));
 
         for (k = 0; k < xn; k++) {
-                double sumreal = 0;
-                double sumimag = 0;
+                double sum_out = 0;
+                double sum_real = 0;
+                double sum_imag = 0;
 
                 for (n = 0; n < xn; n++) {
-                        sumreal += x[n] * cos(n * k * 2 * M_PI / xn);
-                        sumimag -= x[n] * sin(n * k * 2 * M_PI / xn);
+                        sum_real += x[n] * cos(n * k * 2 * M_PI / xn);
+                        sum_imag -= x[n] * sin(n * k * 2 * M_PI / xn);
                 }
 
-                (*fx)[k] = fabs(sumreal*sumreal) + fabs(sumimag*sumimag);
+                sum_out = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
+                (*fx)[k] = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
         }
 
         return 0;
@@ -202,10 +204,10 @@ int mpi_dft(
 
         // Perform the dft starting from this sample
         for (k = 0; k < nsamples_per_node; k++) {
-                double  sum_real = 0;
-                double  sum_imag = 0;
                 double  sum_out = 0;
                 int     sample_start;
+                double  sum_real = 0;
+                double  sum_imag = 0;
 
                 // Out of bounds check
                 if ((k + nsamples_start) > nsamples/2) break;
