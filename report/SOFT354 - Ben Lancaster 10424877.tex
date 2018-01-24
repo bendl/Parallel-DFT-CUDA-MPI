@@ -115,13 +115,13 @@ The DFT algorithm is a widely used algorithm used heavy in digital signal proces
 
 \section{Introduction}
 This report discusses the design, implementation, and evaluation of a parallel Discrete Fourier Transform (DFT) algorithm using CUDA and MPI.
-In signal processing, DFTs are used to represent signals as a series of sinusoidal waveforms at different frequencies and amplitudes. This is useful when wanting to identify specific audio components in speed recognition. 
+In signal processing, DFTs are used to represent signals as a series of sinusoidal waveforms at different frequencies and amplitudes. This is useful when wanting to identify specific audio components in speed recognition, measuring the correlation of two signals, and much more.
 
 \begin{figure}[H]%
     \centering
-    \subfloat[Time domain]{{\includegraphics[width=7cm]{intro_signal} }}%
+    \subfloat[Time domain]{{\includegraphics[width=6cm]{intro_signal} }}%
     \qquad
-    \subfloat[Frequency domain]{{\includegraphics[width=7cm]{intro_dft} }}%
+    \subfloat[Frequency domain]{{\includegraphics[width=6cm]{intro_dft} }}%
     \vspace{5pt}
     \caption{\textbf{Left:} A compound signal made up of 1, 5, 20, 100, and 200 Hz sine waves in the time domain. \textbf{Right:} Frequency domain representation showing high amplitude peaks for the 1, 5, 20, 100, and 200 Hz waveforms.}%
     \label{fig:dft_demo}%
@@ -129,7 +129,7 @@ In signal processing, DFTs are used to represent signals as a series of sinusoid
 
 An example application of the DFT algorithm is shown above in Figure \ref{fig:dft_demo}. The complex, compound signal on the left shown in the time domain is represented in the frequency domain on the right.
 
-The 1 dimensional Discrete Fourier Transform algorithm is show in Figure \ref{fig:dft_algorithm}. The algorithm in a complex vector and produces a complex vector of the same length in the frequency domain. The output sample $X_{k}$ is equal to the sum of all inputs multiplied by the exponential function $-i2$$\pi$$kn/N$, where $i$ is the square root of -1; $2$$\pi$ is 360 degrees; $k$ and $n$ are integer indexes to time and frequency domains, respectively; and $N$ is the number of samples in the signal.
+The 1 dimensional Discrete Fourier Transform algorithm is show in Figure \ref{fig:dft_algorithm}. The algorithm accepts a complex vector in the time domain and produces a complex vector of the same length in the frequency domain. The output sample $X_{k}$ is equal to the sum of all inputs multiplied by the exponential function $-i2$$\pi$$kn/N$, where $i$ is the square root of -1; $2$$\pi$ is 360 degrees; $k$ and $n$ are integer indexes to time and frequency domains, respectively; and $N$ is the number of samples in the signal.
 
 \begin{figure}[H]
 \begin{center}
@@ -163,7 +163,7 @@ The CUDA solution is required to be built for the x64 architecture and the MPI s
 \label{fig:code_dft_afp}
 \end{figure}
 
-Both of the parallel MPI and CUDA solutions I propose are based upon the sequential DFT algorithm proposed by Arndt \citep{arndt2002algorithms} but with parallel concepts applied to it.
+Both of the parallel MPI and CUDA solutions I propose are inspired by the sequential DFT algorithm proposed by Arndt \citep{arndt2002algorithms} but with parallel concepts applied to it.
 
 \subsection{CUDA}
 
@@ -176,7 +176,7 @@ Both of the parallel MPI and CUDA solutions I propose are based upon the sequent
 \end{wrapfigure}
 The CUDA implementation utilises a host device, typically a CPU, to retrieve the input samples from a file and store the resulting output.   After reading the samples from a .csv file, the host allocates 2 global memory buffers on the device for the samples and output, and copies the input samples to the device.  Figure \ref{fig:cuda_impl1} displays the CUDA DFT algorithm's control flow.
 
-Each thread is assigned a unique sample from the input vector. The thread then performs the DFT calculate using it's index, the samples value, and all other input sample points.
+Each thread is assigned a unique sample from the input vector. The thread then performs the DFT calculation using it's index, the samples value, and all other input sample points.
 
 As the input samples are 1D dimensional, kernels are launched with a 1D grids and blocks to intuitively map threads to samples.
  The kernel assigns each output sample to a unique thread, identified by \textit{idx}. Each output sample must be calculated by iterating over the entire input sample vector. 
@@ -301,7 +301,7 @@ This section compares the \textit{total algorithm time} of the sequential and pa
 \label{fig:seq_vs_par}
 \end{wrapfigure}
 
-From Figure \ref{fig:seq_vs_par} we can see that the the sequential algorithm's total time is much greater than it's parallel counterparts for all small and large sample sizes.
+From Figure \ref{fig:seq_vs_par} we can see that the sequential algorithm's total time is much greater than it's parallel counterparts for all small and large sample sizes.
 
 As both algorithms, sequential and parallel, have $O(n^2)$ complexity, visualizing performance differences with large datasets requires a logarithmic axis.
 
@@ -315,7 +315,7 @@ For larger sample sizes, CUDA outperforms MPI. This is likely because the amount
 \subsection{Sub-sample partitioning}
 The current algorithmic approach to both MPI and CUDA solutions is to assign output samples to threads and nodes. The downside of this method is that each output sample must act upon all other input samples and is thus sub-quadratic in terms of computational complexity.
 
-A solution to this is to assign a 'master' thread/node to each sample, then assign a unique thread for each input sample. The input sample threads would calculate their real and imaginary parts, which when required by a master thread, would reduce using a custom sum reduction method and then multiply by the input sample.
+A method to improve this is to assign a 'master' thread/node to each output sample, then assign a unique thread for each input sample. The input sample threads would calculate their real and imaginary parts, which when required by a master thread, would reduce using a custom sum reduction method and then multiply by the input sample.
 
 This solution would require twice as many threads/nodes as samples but would reduce the computation time by having each thread work out a partial solution. The master thread will not be required to calculate real and imaginary parts for all samples; it will just multiply the result from other threads by it's input sample value. The solution will still be of $O(n^2)$ complexity however it's execution time, for each sample, will be reduced linearly.
 
