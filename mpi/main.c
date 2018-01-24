@@ -126,14 +126,14 @@ int read_into_v(char *path, double **v, int *vn)
         }
 }
 
-void fprint_vec(FILE *f, double *v, int n)
+void fprint_vec(FILE *f, double *v, int k)
 {
         int i;
         FILE *f_out;
 
         if (f) f_out = f;
         else f_out = stdout;
-        for (i = 0; i < n; i++) {
+        for (i = 0; i < k; i++) {
                 fprintf(f_out, "%d,%.2lf\n", i, v[i]);
         }
 }
@@ -160,28 +160,30 @@ double timer_stop(__int64 * start, double *freq)
 
 
 // Sequential implementation of the DFT algorithm
+// https://www.nayuki.io/page/how-to-implement-the-discrete-fourier-transform
 int seq_dft(
         _in_ double *x, _in_ int xn,
         _out_ double **fx)
 {
-        int k, n;
+        int w, k;
+        const double phi = 2 * M_PI / xn;
         //printf("Performing dft on input:\r\n\t");
 
         // Allocate memory for output vector function
         *fx = (double*)calloc(xn, sizeof(double));
 
-        for (k = 0; k < xn; k++) {
+        for (w = 0; w < xn; w++) {
                 double sum_out = 0;
                 double sum_real = 0;
                 double sum_imag = 0;
 
-                for (n = 0; n < xn; n++) {
-                        sum_real += x[n] * cos(n * k * 2 * M_PI / xn);
-                        sum_imag -= x[n] * sin(n * k * 2 * M_PI / xn);
+                for (k = 0; k < xn; k++) {
+                        sum_real += x[k] * cos(k * w * phi);
+                        sum_imag -= x[k] * sin(k * w * phi);
                 }
 
                 sum_out = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
-                (*fx)[k] = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
+                (*fx)[w] = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
         }
 
         return 0;
@@ -194,7 +196,8 @@ int mpi_dft(
         _in_ int N,             // vector time domain count
         _out_ double **fx       // vector frequency domain out
 ) {
-        int k, n;
+        int w, k;
+        const double phi = 2 * M_PI / N;
 
         if (n_start > nsamples) return 1;
         printf("#%d nstart: %d\r\n", world_rank, n_start);
@@ -203,23 +206,23 @@ int mpi_dft(
         *fx = (double*)calloc(nsamples_per_node, sizeof(double));
 
         // Perform the dft starting from this sample
-        for (k = 0; k < nsamples_per_node; k++) {
+        for (w = 0; w < nsamples_per_node; w++) {
                 double  sum_out = 0;
                 int     sample_start;
                 double  sum_real = 0;
                 double  sum_imag = 0;
 
                 // Out of bounds check
-                if ((k + nsamples_start) > nsamples/2) break;
+                if ((w + nsamples_start) > nsamples/2) break;
 
-                for (n = 0; n < N; n++) {
-                        sum_real += vt[n] * cos(n * (k + nsamples_start) * 2 * M_PI / N);
-                        sum_imag -= vt[n] * sin(n * (k + nsamples_start) * 2 * M_PI / N);
+                for (k = 0; k < N; k++) {
+                        sum_real += vt[k] * cos(k * (w + nsamples_start) * phi);
+                        sum_imag -= vt[k] * sin(k * (w + nsamples_start) * phi);
                 }
 
                 sum_out = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
                 //printf("#%d writing %d: %f\r\n", world_rank, k, sum_out);
-                (*fx)[k] = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
+                (*fx)[w] = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
         }
 
         return 0;

@@ -199,6 +199,7 @@ __global__ void kernel_dft(
         // 1D grid and block dimensions
         // Sample index
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        const double phi = 2 * M_PI / xn;
         
         // Stop threads in block outside of xn
         if (idx > xn) return;
@@ -217,11 +218,11 @@ __global__ void kernel_dft(
         double sum_imag = 0;
         for (n = 0; n < xn; n++) {
 #if USE_CUDA_SHARED == 1
-                sum_real += a_shared[n] * cos(n * idx * 2 * M_PI / xn);
-                sum_imag -= a_shared[n] * sin(n * idx * 2 * M_PI / xn);
+                sum_real += a_shared[n] * cos(n * idx * phi);
+                sum_imag -= a_shared[n] * sin(n * idx * phi);
 #else
-                sum_real += a[n] * cos(n * idx * 2 * M_PI / xn);
-                sum_imag -= a[n] * sin(n * idx * 2 * M_PI / xn);
+                sum_real += a[n] * cos(n * idx * phi);
+                sum_imag -= a[n] * sin(n * idx * phi);
 #endif
         }
 
