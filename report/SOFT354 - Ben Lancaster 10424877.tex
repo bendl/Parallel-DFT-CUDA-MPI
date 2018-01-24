@@ -68,7 +68,7 @@ My placement as a Firmware Engineer at Spirent, a world leader in GNSS simulator
 \newpage
 
 \section{Introduction}
-This report discusses the implementation and performance of the Discrete Fourier Transform (DFT) algorithm in CUDA and MPI.
+This report discusses the design, implementation, and evaluation of a parallel Discrete Fourier Transform (DFT) algorithm using CUDA and MPI.
 
 In signal processing, DFTs are used to represent signals as a series of sinusoidal waveforms at different frequencies and amplitudes. This is useful when wanting to identify specific audio components in speed recognition. 
 
@@ -107,16 +107,13 @@ Because of FFT having better speed and space performance, it is used in place of
 \section{Implementation}
 This section discusses the design considerations and implementation of the parallel DFT algorithm in CUDA and MPI.
 
-Both programs are run on a quad-core 4-thread Intel i5-4670k CPU at 4.3GHz with an NVIDIA GTX 970 GPU with 4GB memory, 1664 CUDA cores, 1050Mhz base clock, and featuring CUDA Compute Capability 5.2, which supports 1024 threads per block and 48KB shared memory.
+Both programs are run on a quad-core 4-thread Intel i5-4670k CPU at 4.3GHz with an NVIDIA GTX 970 GPU with 4GB memory, 1664 CUDA cores, 1050Mhz base clock, and featuring CUDA Compute Capability 5.2, which supports 1024 threads per block and 48KB maximum shared memory per block.
 
-The software solution is split into 2 Visual Studio projects: soft354\_cuda and soft354\_mpi, for CUDA and MPI respectively. Only the CUDA and MPI libraries, and the \textit{windows.h} header (for time measurement, see later.) are required to build the two solutions.
-
+The software solution is split into 2 Visual Studio projects: soft354\_cuda and soft354\_mpi, for CUDA and MPI respectively. Only the CUDA and MPI libraries, and the \textit{windows.h} header (for time measurement, see later.) are required to build the two solutions. 
 The CUDA solution is required to be built for the x64 architecture and the MPI solution is required to be built for the x86 architecture. The differences in the architectures will have a negligible effect on the performance of the programs. 
 
 \subsection{CUDA}
-The CUDA implementation utilises a host device, typically a CPU, to retrieve the input samples from a file and store the resulting output. 
-
-After reading the samples from a .csv file, the host allocates 2 global memory buffers on the device for the samples and output, and copies the input samples to the device. 
+The CUDA implementation utilises a host device, typically a CPU, to retrieve the input samples from a file and store the resulting output.   After reading the samples from a .csv file, the host allocates 2 global memory buffers on the device for the samples and output, and copies the input samples to the device.  Figure \ref{fig:cuda_impl1} displays the CUDA DFT algorithm's control flow.
 
 \begin{wrapfigure}{r}{0.4\textwidth}
 \begin{center}
@@ -126,9 +123,10 @@ After reading the samples from a .csv file, the host allocates 2 global memory b
 \label{fig:cuda_impl1}
 \end{wrapfigure}
 
-As the input samples are 1D dimensional, kernels are launched with a 1D grids and blocks. 
+As the input samples are 1D dimensional, kernels are launched with a 1D grids and blocks to intuitively map threads to samples.
+ The kernel assigns each output sample to a unique thread, identified by \textit{idx}. Each output sample must be calculated by iterating over the entire input sample vector. 
 
-The kernel assigns each output sample to a unique thread, identified by \textit{idx}. Each output sample must be calculated by iterating over the entire input sample vector. As the input sample size can contain many samples, the kernel will require many accesses to global memory. A technique, utilising the device's shared memory, is described in section \ref{sect:Dynamic Shared Memory} to reduce the number of global memory accesses.
+As the input sample size can contain many samples, the kernel will require many accesses to global memory. A technique, utilising the device's shared memory, is described in section \ref{sect:Dynamic Shared Memory} to reduce the number of global memory accesses.
 
 Each thread writes it's result back into the global output buffer, which is then copied back from the device to the host.
 
@@ -165,21 +163,42 @@ Even though we are accessing faster memory, it's size limitations causes resourc
 
 
 \subsection{MPI}
-The MPI implementation is similar to the CUDA kernel. Instead of each output sample being assigned to a thread, the output samples are split across a range of nodes. 
+The MPI implementation is similar to the CUDA kernel. Instead of each output sample being assigned to a unique thread, nodes are assigned a contiguous subset of the samples for which they perform the DFT function on, producing multiple outputs per node.
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[scale=0.7]{mpi_impl1}
+\includegraphics[scale=0.5]{mpi_impl1}
 \end{center}
-\caption{Control flow diagram for the MPI DFT algorithm.}
-\label{fig:train10x}
+\caption{Control flow diagram of the parallel MPI DFT algorithm.}
+\label{fig:dft_algorithm}
 \end{figure}
+
+The size of the subset of samples each node receives is calculated by dividing the total number of samples by the number of nodes. This distributes an equal number of samples to each node which allows each node to perform it's calculations and communications in similar time to the other nodes. This reduces the time spent by nodes being idle as they wait for other nodes to complete. The more MPI nodes used, the fewer samples allocated per node which reduces the number of DFT calculations required. Section \ref{sect:MPI Node Count} discusses the optimum node count and how to find it.
+
+\begin{figure}[H]%
+    \centering
+    \subfloat[Contiguous sample subset assignment per MPI node code snippet. Located: main.c line 281.]{{\includegraphics[width=7.5cm]{mpi_code_1} }}%
+    \qquad
+    \subfloat[Subset bounds checking for each MPI node. Located: main.c line 212.]{{\includegraphics[width=6cm]{mpi_code_2} }}%
+    \vspace{5pt}
+    \caption{}%
+    \label{fig:cuda_threads_per_block}%
+\end{figure}
+
+Unlike the FFT algorithm, which only works for sample sizes equal to a power of 2, DFT works for any sample size. This means that the algorithm used to distribute the samples to each node will result in the last node to have an equal or less amount of samples than the other nodes. To account for this, the MPI DFT algorithm limits it's iterations to the number of samples. 
+
+The MPI solution exploits the \textit{MPI\_gather} feature of gathering from nodes in the order of their rank. This saves time re-ordering incoming output samples to match the input sample order.
+
 
 \section{Evaluation}
 \subsection{Measuring Performance}
 Performance metrics have been captured using Windows' `\textit{QueryPerformanceCounter}` and the `NSight Performance Analysis` tools. Helper macros, `\textit{TIME\_START}` and `\textit{TIME\_STOP}` are used to record timed code sections.
 
 Key performance metrics that have been analysed are: Memory allocation time, MPI broadcast and Gather time, MPI DFT calculation time, CUDA kernel execution time, CUDA memory operations time, CUDA kernel occupancy, and number of blocked CUDA warps.
+
+Results shown in this report are averaged over multiple measurements to give a better estimate of real performance and reduce the effect of outliers. Raw measurements, which include repeat attempt timings, are found in the \textit{test/*.csv} directory.
+
+As stated previously, all measurements were performed on a machine with a 4-core 4-thread Intel i5-4670k CPU at 4.3GHz with an NVIDIA GTX 970 GPU with 4GB memory, 1664 CUDA cores, 1050Mhz base clock, and featuring CUDA Compute Capability 5.2, which supports 1024 threads per block and 48KB maximum shared memory per block.
 
 \subsection{MPI Node Count}\label{sect:MPI Node Count}
 When running MPI on a single machine, MPI will spawn multiple nodes (processes) that are subject the OS's scheduling strategy. In addition, depending on available CPU resources, like core count, MPI and the OS will assign CPU resources to each processes.
@@ -194,7 +213,7 @@ When running MPI on a single machine, MPI will spawn multiple nodes (processes) 
 
 Running on a 2 core, 4 thread CPU, with more MPI nodes than CPU threads, the OS will need to schedule each node with other running programs, which will reduce our MPI program's performance.
 
-As seen in Figure \ref{fig:mpi_eval_nodes}, using few MPI nodes requires each node to work on more samples, which increases the average DFT calculate time. The small amount of nodes also means that little inter-process communication needs to take place to broadcast and gather the results.
+As seen in Figure \ref{fig:mpi_eval_nodes}, using few MPI nodes requires each node to work on more samples, which increases the average DFT calculate time. The small amount of nodes also means that little inter-process communication needs to take place to broadcast and gather the results. The \textit{Total run-time} metric starts when the MPI solution broadcasts the sample vector to each node, and ends after the gathering and combining of output samples. Therefore, this measurement includes all communication times as well as the DFT computation time.
 
 Increasing the number of MPI nodes reduces the average DFT calculation time per node, as each node has fewer samples to work on, but inter-process communication is greatly increased. The MPI implementation uses blocking barrier communication messages to share and collect the results. With many nodes, it takes longer for MPI to synchronise the nodes resulting in longer total run-times.
 
