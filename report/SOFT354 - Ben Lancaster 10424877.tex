@@ -1,4 +1,5 @@
 \documentclass[11pt,a4paper]{article}
+
 \usepackage[margin=0.8in]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath}
@@ -6,6 +7,25 @@
 \usepackage{amssymb}
 \usepackage[hidelinks]{hyperref}
 \usepackage{float}
+
+%% Bibliography/references packages
+\usepackage{natbib}
+\bibliographystyle{agsm}
+
+\RequirePackage{filecontents}
+\begin{filecontents}{soft354_bib.bib}
+@online{wikipedia:dft,
+  author = {MultiMedia LLC},
+  title = {{MS Windows NT} Kernel Description},
+  year = 1999,
+  url = {http://web.archive.org/web/20080207010024/http://www.808multimedia.com/winnt/kernel.htm},
+  urldate = {2010-09-30}
+}
+@book{1,
+title={Book},
+author={Author}
+}
+\end{filecontents}
 
 %s comments
 \usepackage{verbatim}
@@ -36,6 +56,7 @@
 \rfoot{Ben Lancaster 10424877}
 
 \renewcommand{\subsectionmark}[1]{\markright{\thesubsection\ #1}}
+
 
 \begin{document}
 
@@ -74,8 +95,6 @@ In signal processing, DFTs are used to represent signals as a series of sinusoid
 
 DFT is largely used in digital signal and image processing applications. 
 
-In this report, I will be implementing the DFT to convert signals in the time domain to the frequency domain.
-
 \begin{figure}[H]%
     \centering
     \subfloat[Time domain]{{\includegraphics[width=7cm]{intro_signal} }}%
@@ -90,10 +109,6 @@ The 1 dimensional Discrete Fourier Transform algorithm is show in Figure \ref{fi
 
 The algorithm in a complex vector and produces a complex vector of the same length in the frequency domain.
 
-Each output sample must be calculated by acting upon all other samples in the input vector. This means the algorithm has a computation complexity of $O(n^2)$.
-
-A faster implementation of the DFT, called Fast Fourier Transform, achieves similar results in only $O(n.\log(n))$ time.
-
 \begin{figure}[H]
 \begin{center}
 \includegraphics[scale=1]{dft_algorithm}
@@ -102,7 +117,14 @@ A faster implementation of the DFT, called Fast Fourier Transform, achieves simi
 \label{fig:dft_algorithm}
 \end{figure}
 
-Because of FFT having better speed and space performance, it is used in place of the DFT algorithm in libraries such as CUDA, Matlab, and Numpy. For this reason, I will be exploring techniques 
+Each output sample must be calculated by acting upon all other samples in the input vector. This means the algorithm has a computation complexity of $O(n^2)$  \cite{wikipedia:dft}.
+
+A faster implementation of the DFT, called Fast Fourier Transform (FFT), achieves similar results in only $O(n\log(n))$ time. It achieves this by recursively dividing the input sample by 2 into separate \textit{bins}. The output of these bins can be reused, reducing the need to re-iterate over the input vector.
+
+
+A disadvantage with FFT is that it requires the input vector length to be of a power of 2. If one wants to use FFT with a non-power-of-two length input, the input will need to need to be padded with 0's up to the next power of 2, or stripped down to the nearest. Padding with 0's has a negative impact on the output of the FFT function due to the FFT  working on 0Hz samples that will propagate through to other previous samples, offsetting their correct frequency output. If stripping down the input vector, information will be lost from the stripped samples.
+
+Because of these disadvantages, a DFT function may be required instead, if output accuracy is favoured over speed. In this report, I will be designing, implementing, and evaluating, a parallel DFT algorithm using CUDA and MPI.
 
 \section{Implementation}
 This section discusses the design considerations and implementation of the parallel DFT algorithm in CUDA and MPI.
@@ -163,14 +185,14 @@ Even though we are accessing faster memory, it's size limitations causes resourc
 
 
 \subsection{MPI}
-The MPI implementation is similar to the CUDA kernel. Instead of each output sample being assigned to a unique thread, nodes are assigned a contiguous subset of the samples for which they perform the DFT function on, producing multiple outputs per node.
+The MPI implementation is similar to the CUDA kernel. However, instead of each output sample being assigned to a unique thread, nodes are assigned a contiguous subset of the samples for which they perform the DFT function on, producing multiple outputs per node.
 
 \begin{figure}[H]
 \begin{center}
 \includegraphics[scale=0.5]{mpi_impl1}
 \end{center}
 \caption{Control flow diagram of the parallel MPI DFT algorithm.}
-\label{fig:dft_algorithm}
+\label{fig:mpi_impl1}
 \end{figure}
 
 The size of the subset of samples each node receives is calculated by dividing the total number of samples by the number of nodes. This distributes an equal number of samples to each node which allows each node to perform it's calculations and communications in similar time to the other nodes. This reduces the time spent by nodes being idle as they wait for other nodes to complete. The more MPI nodes used, the fewer samples allocated per node which reduces the number of DFT calculations required. Section \ref{sect:MPI Node Count} discusses the optimum node count and how to find it.
@@ -182,12 +204,12 @@ The size of the subset of samples each node receives is calculated by dividing t
     \subfloat[Subset bounds checking for each MPI node. Located: main.c line 212.]{{\includegraphics[width=6cm]{mpi_code_2} }}%
     \vspace{5pt}
     \caption{}%
-    \label{fig:cuda_threads_per_block}%
+    \label{fig:mpi_code}%
 \end{figure}
 
 Unlike the FFT algorithm, which only works for sample sizes equal to a power of 2, DFT works for any sample size. This means that the algorithm used to distribute the samples to each node will result in the last node to have an equal or less amount of samples than the other nodes. To account for this, the MPI DFT algorithm limits it's iterations to the number of samples. 
 
-The MPI solution exploits the \textit{MPI\_gather} feature of gathering from nodes in the order of their rank. This saves time re-ordering incoming output samples to match the input sample order.
+The MPI solution exploits the \textit{MPI\_Gather} feature of gathering from nodes in the order of their rank. This saves time re-ordering incoming output samples to match the input sample order.
 
 
 \section{Evaluation}
@@ -275,6 +297,7 @@ Using CUDA's built in \textit{cudoubleComplex} type will likely increase perform
 \newpage
 \section{Conclusion}
 
-
+\newpage
+\bibliography{soft354_bib} 
 
 \end{document}
