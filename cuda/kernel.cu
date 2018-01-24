@@ -158,11 +158,13 @@ int assert_vec(double *v, double *vt, int n)
 }
 
 // Sequential implementation of the DFT algorithm for comparison
+// https://www.nayuki.io/page/how-to-implement-the-discrete-fourier-transform
 int seq_dft(
         _in_ double *x, _in_ int xn,
         _out_ double **fx)
 {
         int k, n;
+        const double phi = 2 * M_PI / xn;
         //printf("Performing dft on input:\r\n\t");
 
         *fx = (double*)calloc(xn, sizeof(double));
@@ -174,8 +176,8 @@ int seq_dft(
                 double sum_imag = 0;
 
                 for (n = 0; n < xn; n++) {
-                        sum_real += x[n] * cos(n * k * 2 * M_PI / xn);
-                        sum_imag -= x[n] * sin(n * k * 2 * M_PI / xn);
+                        sum_real += x[n] * cos(n * k * phi);
+                        sum_imag -= x[n] * sin(n * k * phi);
                 }
 
                 (*fx)[k] = fabs(sum_real*sum_real) + fabs(sum_imag*sum_imag);
