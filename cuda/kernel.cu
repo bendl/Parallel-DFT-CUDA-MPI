@@ -158,7 +158,7 @@ int assert_vec(double *v, double *vt, int n)
 }
 
 // Sequential implementation of the DFT algorithm for comparison
-// https://www.nayuki.io/page/how-to-implement-the-discrete-fourier-transform
+// Arndt, J. (2002). Algorithms for Programmers
 int seq_dft(
         _in_ double *x, _in_ int xn,
         _out_ double **fx)

@@ -160,7 +160,7 @@ double timer_stop(__int64 * start, double *freq)
 
 
 // Sequential implementation of the DFT algorithm
-// https://www.nayuki.io/page/how-to-implement-the-discrete-fourier-transform
+// Arndt, J. (2002). Algorithms for Programmers
 int seq_dft(
         _in_ double *x, _in_ int xn,
         _out_ double **fx)
