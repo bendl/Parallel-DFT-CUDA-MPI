@@ -10,4 +10,4 @@ This repository designs and evaluates a parallel DFT (Discrete Fourier Transform
 ## Evaluation
 Both CUDA and MPI implementations saw significant performance benefits over the sequential algorithm.
 
-![Performance Graph showing better parallel performance](https://raw.githubusercontent.com/bendl/soft354/blob/master/report/img/seq_vs_par.JPG)
+![Performance Graph showing better parallel performance](https://raw.githubusercontent.com/bendl/soft354/master/report/img/seq_vs_par.JPG)
